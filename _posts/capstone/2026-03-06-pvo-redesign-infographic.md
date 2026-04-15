@@ -3,7 +3,7 @@ layout: post
 title: "Poway Veterans Organization — Website Redesign Infographic"
 date: 2026-03-06
 author: "Capstone Student"
-categories: [capstone, web-analysis, nonprofit, veterans]
+categories: Capstone 
 tags: [pvo, ux, redesign, infographic, veterans, poway]
 image: /images/capstone/pvo_redesign_infographic.png
 permalink: /capstone/pvo-redesign-infographic/

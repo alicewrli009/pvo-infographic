@@ -1,193 +1,316 @@
 /**
- * User Preferences System — Refactored with Single Responsibility Principle (SRP)
+ * Global site-wide theme preferences — SRP + Class-based architecture.
  *
- * Architecture:
- *   1. ConfigManager    — Constants, presets, and site defaults (data only)
- *   2. ColorUtils       — Pure color math functions (hex->rgb, luminance, adjust)
- *   3. StorageManager   — localStorage read/write (single storage concern)
- *   4. ThemeEngine      — Sets CSS custom properties on :root (NO style injection)
- *   5. TranslationEngine— Google Translate lifecycle (load, set cookie, remove)
- *   6. TTSEngine        — Text-to-speech speak / stop / settings
- *   7. PreferencesFacade— Orchestrator that wires engines together & exposes public API
- *
- * ALL visual styling lives in _sass/open-coding/user-preferences.scss.
- * JS only sets custom properties and toggles the .user-theme-active class.
+ * Classes use standard get/set naming where applicable:
+ *   ColorUtils        – Pure color math (hex→rgb, luminance, adjust)
+ *   CSSInjector       – Builds and injects the override <style> block
+ *   ThemeEngine        – Reads prefs → sets CSS custom properties + injects overrides
+ *   LanguageManager    – Google Translate integration
+ *   TTSManager         – TTS wrapper: get() settings, speak(), stop()
+ *   PreferencesStore   – localStorage: get() reads stored prefs
+ *   SitePreferences    – Orchestrator: wires everything together, exposes public API
  */
 (function () {
-  'use strict';
 
-  /* ===================================================================
-   * 1. ConfigManager — owns ALL static data (presets, languages, keys)
-   * Reason to change: adding a preset, language, or default value
-   * =================================================================== */
-  const ConfigManager = (() => {
-    const LANGUAGES = {
-      '': { name: 'Default (No Translation)', code: '' },
-      'es': { name: 'Spanish', code: 'es' },
-      'fr': { name: 'French', code: 'fr' },
-      'de': { name: 'German', code: 'de' },
-      'it': { name: 'Italian', code: 'it' },
-      'pt': { name: 'Portuguese', code: 'pt' },
-      'ru': { name: 'Russian', code: 'ru' },
-      'zh-CN': { name: 'Chinese (Simplified)', code: 'zh-CN' },
-      'zh-TW': { name: 'Chinese (Traditional)', code: 'zh-TW' },
-      'ja': { name: 'Japanese', code: 'ja' },
-      'ko': { name: 'Korean', code: 'ko' },
-      'ar': { name: 'Arabic', code: 'ar' },
-      'hi': { name: 'Hindi', code: 'hi' },
-      'vi': { name: 'Vietnamese', code: 'vi' },
-      'th': { name: 'Thai', code: 'th' },
-      'nl': { name: 'Dutch', code: 'nl' },
-      'pl': { name: 'Polish', code: 'pl' },
-      'tr': { name: 'Turkish', code: 'tr' },
-      'uk': { name: 'Ukrainian', code: 'uk' },
-      'he': { name: 'Hebrew', code: 'he' },
-      'fa': { name: 'Persian (Farsi)', code: 'fa' },
-    };
+  // ============================================
+  // CONFIGURATION: Shared constants
+  // ============================================
+  const LANGUAGES = {
+    '': { name: 'Default (No Translation)', code: '' },
+    'es': { name: 'Spanish', code: 'es' },
+    'fr': { name: 'French', code: 'fr' },
+    'de': { name: 'German', code: 'de' },
+    'it': { name: 'Italian', code: 'it' },
+    'pt': { name: 'Portuguese', code: 'pt' },
+    'ru': { name: 'Russian', code: 'ru' },
+    'zh-CN': { name: 'Chinese (Simplified)', code: 'zh-CN' },
+    'zh-TW': { name: 'Chinese (Traditional)', code: 'zh-TW' },
+    'ja': { name: 'Japanese', code: 'ja' },
+    'ko': { name: 'Korean', code: 'ko' },
+    'ar': { name: 'Arabic', code: 'ar' },
+    'hi': { name: 'Hindi', code: 'hi' },
+    'vi': { name: 'Vietnamese', code: 'vi' },
+    'th': { name: 'Thai', code: 'th' },
+    'nl': { name: 'Dutch', code: 'nl' },
+    'pl': { name: 'Polish', code: 'pl' },
+    'tr': { name: 'Turkish', code: 'tr' },
+    'uk': { name: 'Ukrainian', code: 'uk' },
+    'he': { name: 'Hebrew', code: 'he' },
+    'fa': { name: 'Persian (Farsi)', code: 'fa' },
+  };
 
-    const SITE_DEFAULT = {
-      bg: '#121212',
-      text: '#F0F0F0',
+  const SITE_DEFAULT = {
+    bg: '#121212',
+    text: '#F0F0F0',
+    font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
+    size: 14,
+    accent: '#4CAFEF',
+  };
+
+  const PRESETS = {
+    'Site Default': SITE_DEFAULT,
+    Midnight: {
+      bg: '#0b1220', text: '#e6eef8',
       font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
-      size: 14,
-      accent: '#4CAFEF',
-    };
+      size: 14, accent: '#3b82f6',
+    },
+    Light: {
+      bg: '#ffffff', text: '#FF80AA',
+      font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
+      size: 14, accent: '#2563eb',
+    },
+    Green: {
+      bg: '#154734', text: '#e6f6ef',
+      font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
+      size: 14, accent: '#10b981',
+    },
+    Sepia: {
+      bg: '#f4ecd8', text: '#A52A2A',
+      font: "Georgia, 'Times New Roman', Times, serif",
+      size: 14, accent: '#b45309',
+    },
+    Cyberpunk: {
+      bg: '#0a0a0f', text: '#f0f0f0',
+      font: "'Source Code Pro', monospace",
+      size: 14, accent: '#f72585',
+    },
+    Ocean: {
+      bg: '#0c1929', text: '#e0f2fe',
+      font: "'Open Sans', Arial, sans-serif",
+      size: 15, accent: '#06b6d4',
+    },
+  };
 
-    const PRESETS = {
-      'Site Default': SITE_DEFAULT,
-      Midnight: {
-        bg: '#0b1220', text: '#e6eef8',
-        font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
-        size: 14, accent: '#3b82f6',
-      },
-      Light: {
-        bg: '#ffffff', text: '#FF80AA',
-        font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
-        size: 14, accent: '#2563eb',
-      },
-      Green: {
-        bg: '#154734', text: '#e6f6ef',
-        font: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
-        size: 14, accent: '#10b981',
-      },
-      Sepia: {
-        bg: '#f4ecd8', text: '#A52A2A',
-        font: "Georgia, 'Times New Roman', Times, serif",
-        size: 14, accent: '#b45309',
-      },
-      Cyberpunk: {
-        bg: '#0a0a0f', text: '#f0f0f0',
-        font: "'Source Code Pro', monospace",
-        size: 14, accent: '#f72585',
-      },
-      Ocean: {
-        bg: '#0c1929', text: '#e0f2fe',
-        font: "'Open Sans', Arial, sans-serif",
-        size: 15, accent: '#06b6d4',
-      },
-    };
-
-    const STORAGE_KEY = 'sitePreferences';
-    const RESET_FLAG_KEY = 'preferencesReset';
-
-    return Object.freeze({ LANGUAGES, SITE_DEFAULT, PRESETS, STORAGE_KEY, RESET_FLAG_KEY });
-  })();
-
-
-  /* ===================================================================
-   * 2. ColorUtils — pure functions for color math
-   * Reason to change: new color algorithm needed
-   * =================================================================== */
-  const ColorUtils = (() => {
-    function hexToRgb(hex) {
+  // ============================================
+  // RESPONSIBILITY: Pure color math utilities
+  // ============================================
+  class ColorUtils {
+    /** Convert hex string to { r, g, b } */
+    static hexToRgb(hex) {
       if (!hex) return { r: 0, g: 0, b: 0 };
       hex = hex.replace('#', '');
       if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
       const bigint = parseInt(hex, 16);
-      return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+      return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255,
+      };
     }
 
-    function getLuminance(hex) {
-      const { r, g, b } = hexToRgb(hex);
+    /** Perceived luminance 0-1 */
+    static getLuminance(hex) {
+      const { r, g, b } = ColorUtils.hexToRgb(hex);
       return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     }
 
-    function isLightColor(hex) { return getLuminance(hex) > 0.5; }
+    /** True when background is perceptually light */
+    static isLightColor(hex) {
+      return ColorUtils.getLuminance(hex) > 0.5;
+    }
 
-    function adjustColor(hex, amt) {
-      const { r, g, b } = hexToRgb(hex);
+    /** Shift every channel by amt (positive = lighten, negative = darken) */
+    static adjustColor(hex, amt) {
+      const { r, g, b } = ColorUtils.hexToRgb(hex);
       const clamp = v => Math.max(0, Math.min(255, v));
-      return '#' + [clamp(r + amt), clamp(g + amt), clamp(b + amt)]
-        .map(v => { const h = v.toString(16); return h.length === 1 ? '0' + h : h; })
-        .join('');
+      return (
+        '#' +
+        [clamp(r + amt), clamp(g + amt), clamp(b + amt)]
+          .map(v => {
+            const h = v.toString(16);
+            return h.length === 1 ? '0' + h : h;
+          })
+          .join('')
+      );
     }
+  }
 
-    return Object.freeze({ hexToRgb, getLuminance, isLightColor, adjustColor });
-  })();
-
-
-  /* ===================================================================
-   * 3. StorageManager — read / write / clear localStorage
-   * Reason to change: storage backend changes (e.g. IndexedDB)
-   * =================================================================== */
-  const StorageManager = (() => {
-    function load() {
-      try {
-        const raw = window.localStorage.getItem(ConfigManager.STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch (e) { console.error('StorageManager.load error', e); return null; }
-    }
-
-    function save(prefs) {
-      try { window.localStorage.setItem(ConfigManager.STORAGE_KEY, JSON.stringify(prefs)); }
-      catch (e) { console.error('StorageManager.save error', e); }
-    }
-
-    function clear() { window.localStorage.removeItem(ConfigManager.STORAGE_KEY); }
-
-    function wasReset() {
-      return window.localStorage.getItem(ConfigManager.RESET_FLAG_KEY) === 'true';
-    }
-
-    return Object.freeze({ load, save, clear, wasReset });
-  })();
-
-
-  /* ===================================================================
-   * 4. ThemeEngine — sets CSS custom properties on :root
-   * Responsibility: compute derived palette, write properties, toggle class.
-   * ALL visual rules (selectors, overrides) live in SASS — not here.
-   * =================================================================== */
-  const ThemeEngine = (() => {
-    // List of every custom property this engine writes (used by reset)
-    const ALL_PROPS = [
-      '--pref-bg-color', '--pref-text-color', '--pref-font-family',
-      '--pref-font-size', '--pref-accent-color', '--pref-selection-color',
-      '--pref-btn-radius',
-      '--background', '--bg-0', '--bg-1', '--bg-2', '--bg-3',
-      '--text', '--text-strong', '--text-muted', '--white1', '--theme',
-      '--panel', '--panel-mid', '--ui-bg', '--ui-border',
-      '--priority-p0', '--priority-p1', '--priority-p2', '--priority-p3',
-    ];
+  // ============================================
+  // RESPONSIBILITY: Build & inject override CSS
+  // ============================================
+  class CSSInjector {
+    static STYLE_ID = 'user-theme-override-css';
 
     /**
-     * Compute derived CSS values from user prefs and write them as
-     * custom properties on <html>. SASS consumes these via var().
+     * Inject (or update) the <style> block that overrides Tailwind /
+     * theme classes when the user theme is active.
      */
-    function apply(prefs) {
-      const base = ConfigManager.SITE_DEFAULT;
-      const bg     = prefs?.bg     || base.bg;
-      const text   = prefs?.text   || base.text;
-      const font   = prefs?.font   || base.font;
-      const size   = prefs?.size   || base.size;
+    static inject(opts) {
+      const { bg, text, font, size, accent, panel, uiBorder, textMuted,
+              selectionColor, buttonStyle } = opts;
+
+      let style = document.getElementById(CSSInjector.STYLE_ID);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = CSSInjector.STYLE_ID;
+        document.head.appendChild(style);
+      }
+
+      let btnRadius = '0.375rem';
+      if (buttonStyle === 'square') btnRadius = '0';
+      else if (buttonStyle === 'pill') btnRadius = '9999px';
+
+      style.textContent = `
+        html.user-theme-active,
+        html.user-theme-active body {
+          background-color: ${bg} !important;
+          color: ${text} !important;
+          font-family: ${font} !important;
+          font-size: ${size}px !important;
+        }
+        html.user-theme-active ::selection {
+          background-color: ${selectionColor} !important;
+          color: white !important;
+        }
+        html.user-theme-active ::-moz-selection {
+          background-color: ${selectionColor} !important;
+          color: white !important;
+        }
+        html.user-theme-active button,
+        html.user-theme-active .btn,
+        html.user-theme-active [class*="rounded"] button,
+        html.user-theme-active input[type="submit"],
+        html.user-theme-active input[type="button"] {
+          border-radius: ${btnRadius} !important;
+        }
+        html.user-theme-active .bg-neutral-900,
+        html.user-theme-active .bg-neutral-800 {
+          background-color: ${bg} !important;
+        }
+        html.user-theme-active .fixed.left-0.bg-neutral-800,
+        html.user-theme-active div[class*="bg-neutral-800"].border {
+          background-color: ${panel} !important;
+        }
+        html.user-theme-active .rounded-lg.bg-neutral-800,
+        html.user-theme-active .p-4.rounded-lg.bg-neutral-800 {
+          background-color: ${panel} !important;
+        }
+        html.user-theme-active .text-neutral-100,
+        html.user-theme-active .text-neutral-50,
+        html.user-theme-active .text-white {
+          color: ${text} !important;
+        }
+        html.user-theme-active .text-neutral-400,
+        html.user-theme-active .text-neutral-500 {
+          color: ${textMuted} !important;
+        }
+        html.user-theme-active .text-gray-300,
+        html.user-theme-active .text-gray-400,
+        html.user-theme-active .text-gray-500,
+        html.user-theme-active .text-gray-600 {
+          color: ${textMuted} !important;
+        }
+        html.user-theme-active .post-meta,
+        html.user-theme-active .post-meta-description {
+          color: ${textMuted} !important;
+        }
+        html.user-theme-active .border-neutral-700,
+        html.user-theme-active .border-neutral-600 {
+          border-color: ${uiBorder} !important;
+        }
+        html.user-theme-active .text-blue-500,
+        html.user-theme-active .border-blue-500 {
+          color: ${accent} !important;
+          border-color: ${accent} !important;
+        }
+        html.user-theme-active .bg-neutral-700 {
+          background-color: ${panel} !important;
+        }
+        html.user-theme-active input,
+        html.user-theme-active select,
+        html.user-theme-active textarea {
+          background-color: ${panel} !important;
+          color: ${text} !important;
+          border-color: ${uiBorder} !important;
+        }
+        html.user-theme-active .lesson-player {
+          background-color: ${bg} !important;
+        }
+        html.user-theme-active .lesson-sidebar {
+          background-color: ${panel} !important;
+          border-color: ${uiBorder} !important;
+        }
+        html.user-theme-active .lesson-sidebar,
+        html.user-theme-active .sidebar-header,
+        html.user-theme-active .sprint-nav,
+        html.user-theme-active .sprint-section,
+        html.user-theme-active .lesson-item {
+          background-color: ${panel} !important;
+          color: ${text} !important;
+        }
+        html.user-theme-active .lesson-main,
+        html.user-theme-active .main-content,
+        html.user-theme-active .lesson-content,
+        html.user-theme-active .content-wrapper {
+          background-color: ${bg} !important;
+          color: ${text} !important;
+        }
+        html.user-theme-active .sidebar-header h2,
+        html.user-theme-active .sidebar-header p,
+        html.user-theme-active .sprint-toggle,
+        html.user-theme-active .lesson-title {
+          color: ${text} !important;
+        }
+        html.user-theme-active .progress-bar-sidebar {
+          background-color: ${uiBorder} !important;
+        }
+        html.user-theme-active .module-card,
+        html.user-theme-active [class*="bg-neutral"],
+        html.user-theme-active [class*="bg-gray"],
+        html.user-theme-active [class*="bg-slate"],
+        html.user-theme-active [class*="bg-zinc"] {
+          background-color: ${panel} !important;
+          color: ${text} !important;
+        }
+        html.user-theme-active h1,
+        html.user-theme-active h2,
+        html.user-theme-active h3,
+        html.user-theme-active h4,
+        html.user-theme-active h5,
+        html.user-theme-active h6,
+        html.user-theme-active p,
+        html.user-theme-active li,
+        html.user-theme-active span,
+        html.user-theme-active div {
+          color: ${text} !important;
+        }
+        html.user-theme-active button,
+        html.user-theme-active .btn,
+        html.user-theme-active a.btn {
+          color: inherit !important;
+        }
+      `;
+    }
+
+    /** Remove the injected override <style> element */
+    static remove() {
+      const el = document.getElementById(CSSInjector.STYLE_ID);
+      if (el) el.remove();
+    }
+  }
+
+  // ============================================
+  // RESPONSIBILITY: Map prefs → CSS custom props
+  // ============================================
+  class ThemeEngine {
+    /**
+     * Apply a preferences object to the document via CSS custom properties,
+     * priority-color tokens, and the override stylesheet.
+     */
+    static apply(prefs) {
+      const base = SITE_DEFAULT;
+      const bg = prefs?.bg || base.bg;
+      const text = prefs?.text || base.text;
+      const font = prefs?.font || base.font;
+      const size = prefs?.size || base.size;
       const accent = prefs?.accent || base.accent;
       const selectionColor = prefs?.selectionColor || accent;
-      const buttonStyle    = prefs?.buttonStyle    || 'rounded';
+      const buttonStyle = prefs?.buttonStyle || 'rounded';
 
       const root = document.documentElement;
-      const set  = (n, v) => root.style.setProperty(n, v);
+      const set = (name, value) => root.style.setProperty(name, value);
 
-      // Core properties (consumed by SASS Section 1 & 2)
+      // Core preference variables
       set('--pref-bg-color', bg);
       set('--pref-text-color', text);
       set('--pref-font-family', font);
@@ -195,13 +318,7 @@
       set('--pref-accent-color', accent);
       set('--pref-selection-color', selectionColor);
 
-      // Button radius as a custom property (consumed by SASS Section 5)
-      let btnRadius = '0.375rem';
-      if (buttonStyle === 'square') btnRadius = '0';
-      else if (buttonStyle === 'pill') btnRadius = '9999px';
-      set('--pref-btn-radius', btnRadius);
-
-      // Derived palette
+      // Derived background shades
       const lightBg = ColorUtils.isLightColor(bg);
       const dir = lightBg ? -1 : 1;
 
@@ -215,14 +332,22 @@
       set('--white1', text);
       set('--theme', lightBg ? 'base' : 'dark');
 
-      set('--panel',     ColorUtils.adjustColor(bg, 25 * dir));
-      set('--panel-mid', ColorUtils.adjustColor(bg, 35 * dir));
-      set('--ui-bg',     ColorUtils.adjustColor(bg, 20 * dir));
-      set('--ui-border', ColorUtils.adjustColor(bg, 45 * dir));
+      // Panel / UI surface tokens
+      const panel = ColorUtils.adjustColor(bg, 25 * dir);
+      const panelMid = ColorUtils.adjustColor(bg, 35 * dir);
+      const uiBg = ColorUtils.adjustColor(bg, 20 * dir);
+      const uiBorder = ColorUtils.adjustColor(bg, 45 * dir);
 
-      set('--text-muted', lightBg ? '#6b7280' : ColorUtils.adjustColor(text, -60));
+      set('--panel', panel);
+      set('--panel-mid', panelMid);
+      set('--ui-bg', uiBg);
+      set('--ui-border', uiBorder);
 
-      // Semantic priority colours
+      // Muted text
+      const textMuted = lightBg ? '#6b7280' : ColorUtils.adjustColor(text, -60);
+      set('--text-muted', textMuted);
+
+      // Priority / semantic colours
       if (lightBg) {
         set('--priority-p0', '#b91c1c');
         set('--priority-p1', '#c2410c');
@@ -235,27 +360,59 @@
         set('--priority-p3', '#22c55e');
       }
 
-      // Toggle class — SASS rules only fire when this class is present
+      // Activate the theme class
       root.classList.add('user-theme-active');
+
+      // Inject Tailwind override stylesheet
+      CSSInjector.inject({
+        bg, text, font, size, accent, panel, uiBorder, textMuted,
+        selectionColor, buttonStyle,
+      });
+
+      // Apply language translation if set
+      const lang = prefs?.language || '';
+      LanguageManager.apply(lang);
     }
 
-    /** Remove all user-theme properties so the site reverts to defaults. */
-    function reset() {
+    /** Remove all user-theme CSS custom properties and the override sheet */
+    static reset() {
       const root = document.documentElement;
       root.classList.remove('user-theme-active');
-      ALL_PROPS.forEach(p => root.style.removeProperty(p));
+      CSSInjector.remove();
+
+      const props = [
+        '--pref-bg-color', '--pref-text-color', '--pref-font-family',
+        '--pref-font-size', '--pref-accent-color', '--pref-selection-color',
+        '--pref-cursor-style', '--background',
+        '--bg-0', '--bg-1', '--bg-2', '--bg-3',
+        '--text', '--text-strong', '--text-muted', '--white1',
+        '--panel', '--panel-mid', '--ui-bg', '--ui-border',
+      ];
+      props.forEach(name => root.style.removeProperty(name));
+    }
+  }
+
+  // ============================================
+  // RESPONSIBILITY: Google Translate integration
+  // ============================================
+  class LanguageManager {
+    /** Inject the CSS that hides the Google Translate toolbar */
+    static _injectHideCSS() {
+      if (document.getElementById('google-translate-hide-css')) return;
+      const style = document.createElement('style');
+      style.id = 'google-translate-hide-css';
+      style.textContent = `
+        .goog-te-banner-frame, .goog-te-balloon-frame { display: none !important; }
+        body { top: 0 !important; position: static !important; }
+        .skiptranslate { display: none !important; }
+        .goog-te-gadget { display: none !important; }
+        #google_translate_element { display: none !important; }
+      `;
+      document.head.appendChild(style);
     }
 
-    return Object.freeze({ apply, reset });
-  })();
-
-
-  /* ===================================================================
-   * 5. TranslationEngine — Google Translate integration
-   * Reason to change: translation provider changes
-   * =================================================================== */
-  const TranslationEngine = (() => {
-    function _clearCookies() {
+    /** Clear all googtrans cookie variations */
+    static clearCookies() {
       const domain = window.location.hostname;
       document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${domain}`;
@@ -263,162 +420,204 @@
       document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=.localhost';
     }
 
-    function _remove() {
-      _clearCookies();
+    /** Attempt to revert Google Translate to the original page language */
+    static _removeTranslation() {
+      LanguageManager.clearCookies();
+
       const select = document.querySelector('.goog-te-combo');
-      if (select) { select.value = ''; select.dispatchEvent(new Event('change')); }
+      if (select) {
+        select.value = '';
+        select.dispatchEvent(new Event('change'));
+      }
+
       try {
         const frame = document.querySelector('.goog-te-banner-frame');
         if (frame && frame.contentDocument) {
-          const btn = frame.contentDocument.querySelector('.goog-te-button button');
-          if (btn) btn.click();
+          const restoreBtn = frame.contentDocument.querySelector('.goog-te-button button');
+          if (restoreBtn) restoreBtn.click();
         }
-      } catch (_) { /* cross-origin */ }
+      } catch (_) { /* cross-origin – ok */ }
 
       const isTranslated =
         document.documentElement.classList.contains('translated-ltr') ||
-        document.documentElement.classList.contains('translated-rtl');
+        document.documentElement.classList.contains('translated-rtl') ||
+        document.querySelector('html.translated-ltr, html.translated-rtl');
+
       if (isTranslated) window.location.reload();
     }
 
-    function _ensureWidget() {
+    /**
+     * Apply a language translation (or remove if langCode is empty).
+     * @param {string} langCode – ISO language code, e.g. 'es', 'fr', ''
+     */
+    static apply(langCode) {
+      document.documentElement.setAttribute('data-translate-lang', langCode);
+      LanguageManager._injectHideCSS();
+      LanguageManager.clearCookies();
+
+      if (!langCode) {
+        LanguageManager._removeTranslation();
+        return;
+      }
+
+      // Set cookies for the desired language
+      const domain = window.location.hostname;
+      document.cookie = `googtrans=/en/${langCode}; path=/`;
+      document.cookie = `googtrans=/en/${langCode}; path=/; domain=${domain}`;
+      document.cookie = `googtrans=/en/${langCode}; path=/; domain=.${domain}`;
+
+      // Initialise Google Translate element (once)
       if (!window.googleTranslateElementInit) {
         window.googleTranslateElementInit = function () {
           new google.translate.TranslateElement({
             pageLanguage: 'en',
-            includedLanguages: Object.keys(ConfigManager.LANGUAGES).filter(k => k).join(','),
+            includedLanguages: Object.keys(LANGUAGES).filter(k => k).join(','),
             layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
             autoDisplay: false,
           }, 'google_translate_element');
         };
       }
+
       if (!document.getElementById('google_translate_element')) {
-        const c = document.createElement('div');
-        c.id = 'google_translate_element';
-        c.style.cssText = 'position:fixed;top:-9999px;left:-9999px;visibility:hidden;';
-        document.body.appendChild(c);
+        const container = document.createElement('div');
+        container.id = 'google_translate_element';
+        container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;visibility:hidden;';
+        document.body.appendChild(container);
       }
+
       if (!document.getElementById('google-translate-script')) {
-        const s = document.createElement('script');
-        s.id = 'google-translate-script';
-        s.src = '//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
-        s.async = true;
-        document.head.appendChild(s);
+        const script = document.createElement('script');
+        script.id = 'google-translate-script';
+        script.src = '//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+        script.async = true;
+        document.head.appendChild(script);
       }
+
+      // Poll until the combo-box appears, then trigger the switch
+      const attemptTranslation = (attempts = 0) => {
+        if (attempts > 100) return;
+        const select = document.querySelector('.goog-te-combo');
+        if (select) {
+          select.value = langCode;
+          select.dispatchEvent(new Event('change'));
+        } else {
+          setTimeout(() => attemptTranslation(attempts + 1), 50);
+        }
+      };
+      attemptTranslation();
     }
+  }
 
-    function _pollForCombo(langCode, attempts) {
-      if (attempts > 100) return;
-      const select = document.querySelector('.goog-te-combo');
-      if (select) { select.value = langCode; select.dispatchEvent(new Event('change')); }
-      else setTimeout(() => _pollForCombo(langCode, attempts + 1), 50);
-    }
-
-    function apply(langCode) {
-      document.documentElement.setAttribute('data-translate-lang', langCode);
-      _clearCookies();
-      if (!langCode) { _remove(); return; }
-      const domain = window.location.hostname;
-      document.cookie = `googtrans=/en/${langCode}; path=/`;
-      document.cookie = `googtrans=/en/${langCode}; path=/; domain=${domain}`;
-      document.cookie = `googtrans=/en/${langCode}; path=/; domain=.${domain}`;
-      _ensureWidget();
-      _pollForCombo(langCode, 0);
-    }
-
-    return Object.freeze({ apply });
-  })();
-
-
-  /* ===================================================================
-   * 6. TTSEngine — Text-to-Speech
-   * Reason to change: speech API changes or new TTS provider
-   * =================================================================== */
-  const TTSEngine = (() => {
-    function getSettings() {
-      const prefs = StorageManager.load() || {};
+  // ============================================
+  // RESPONSIBILITY: Text-to-Speech wrapper
+  // ============================================
+  class TTSManager {
+    /** Get TTS settings from stored preferences */
+    static get() {
+      const prefs = PreferencesStore.get() || {};
       return {
-        voice:  prefs.ttsVoice  || '',
-        rate:   parseFloat(prefs.ttsRate)   || 1,
-        pitch:  parseFloat(prefs.ttsPitch)  || 1,
+        voice: prefs.ttsVoice || '',
+        rate: parseFloat(prefs.ttsRate) || 1,
+        pitch: parseFloat(prefs.ttsPitch) || 1,
         volume: parseFloat(prefs.ttsVolume) || 1,
       };
     }
 
-    function speak(text, options = {}) {
-      if (!('speechSynthesis' in window)) { console.warn('TTS not supported'); return null; }
+    /** Speak the given text, optionally overriding saved settings */
+    static speak(text, options = {}) {
+      if (!('speechSynthesis' in window)) {
+        console.warn('Text-to-speech not supported in this browser');
+        return null;
+      }
       speechSynthesis.cancel();
-      const settings  = getSettings();
+
+      const settings = TTSManager.get();
       const utterance = new SpeechSynthesisUtterance(text);
+
       const voiceName = options.voice || settings.voice;
       if (voiceName) {
         const voice = speechSynthesis.getVoices().find(v => v.name === voiceName);
         if (voice) utterance.voice = voice;
       }
-      utterance.rate   = options.rate   !== undefined ? options.rate   : settings.rate;
-      utterance.pitch  = options.pitch  !== undefined ? options.pitch  : settings.pitch;
+
+      utterance.rate = options.rate !== undefined ? options.rate : settings.rate;
+      utterance.pitch = options.pitch !== undefined ? options.pitch : settings.pitch;
       utterance.volume = options.volume !== undefined ? options.volume : settings.volume;
+
       speechSynthesis.speak(utterance);
       return utterance;
     }
 
-    function speakSelection() {
+    /** Speak whatever text is currently selected on the page */
+    static speakSelection() {
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : '';
-      if (text) { speak(text); return true; }
+      if (text) { TTSManager.speak(text); return true; }
       return false;
     }
 
-    function stop()       { if ('speechSynthesis' in window) speechSynthesis.cancel(); }
-    function isSpeaking() { return 'speechSynthesis' in window && speechSynthesis.speaking; }
-
-    return Object.freeze({ getSettings, speak, speakSelection, stop, isSpeaking });
-  })();
-
-
-  /* ===================================================================
-   * 7. PreferencesFacade — orchestrator & public API
-   * Reason to change: wiring between engines changes
-   * =================================================================== */
-  const PreferencesFacade = (() => {
-    function applyPreferences(prefs) {
-      ThemeEngine.apply(prefs);
-      TranslationEngine.apply(prefs?.language || '');
+    /** Cancel ongoing speech */
+    static stop() {
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
     }
 
-    function resetPreferences() { ThemeEngine.reset(); }
-    function applyLanguage(code) { TranslationEngine.apply(code); }
-
-    function init() {
-      if (typeof window === 'undefined') return;
-      if (StorageManager.wasReset()) return;
-      const prefs = StorageManager.load();
-      if (prefs) applyPreferences(prefs);
+    /** True while the browser is actively speaking */
+    static isSpeaking() {
+      return 'speechSynthesis' in window && speechSynthesis.speaking;
     }
+  }
 
-    return Object.freeze({
-      applyPreferences,
-      resetPreferences,
-      applyLanguage,
-      PRESETS:    ConfigManager.PRESETS,
-      LANGUAGES:  ConfigManager.LANGUAGES,
-      speak:          TTSEngine.speak,
-      speakSelection: TTSEngine.speakSelection,
-      stopSpeaking:   TTSEngine.stop,
-      isSpeaking:     TTSEngine.isSpeaking,
-      getTTSSettings: TTSEngine.getSettings,
-    });
-  })();
+  // ============================================
+  // RESPONSIBILITY: localStorage read / write
+  // ============================================
+  class PreferencesStore {
+    static KEY = 'sitePreferences';
 
+    /** Get preferences from localStorage (returns object or null) */
+    static get() {
+      try {
+        const raw = window.localStorage.getItem(PreferencesStore.KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (e) {
+        console.error('Error loading stored preferences', e);
+        return null;
+      }
+    }
+  }
 
-  /* ===================================================================
-   * Bootstrap
-   * =================================================================== */
-  window.SitePreferences = PreferencesFacade;
+  // ============================================
+  // ORCHESTRATOR: Wires classes, exposes public API, runs init
+  // ============================================
+  function init() {
+    if (typeof window === 'undefined') return;
+
+    // If user explicitly reset, skip applying any prefs
+    const wasReset = window.localStorage.getItem('preferencesReset');
+    if (wasReset === 'true') return;
+
+    const prefs = PreferencesStore.get();
+    if (prefs) ThemeEngine.apply(prefs);
+  }
+
+  // Public API consumed by dashboard.html and other pages
+  window.SitePreferences = {
+    applyPreferences: prefs => ThemeEngine.apply(prefs),
+    resetPreferences: () => ThemeEngine.reset(),
+    applyLanguage: langCode => LanguageManager.apply(langCode),
+    PRESETS,
+    LANGUAGES,
+    // TTS
+    speak: (text, opts) => TTSManager.speak(text, opts),
+    speakSelection: () => TTSManager.speakSelection(),
+    stopSpeaking: () => TTSManager.stop(),
+    isSpeaking: () => TTSManager.isSpeaking(),
+    getTTSSettings: () => TTSManager.get(),
+  };
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    PreferencesFacade.init();
+    init();
   } else {
-    document.addEventListener('DOMContentLoaded', () => PreferencesFacade.init());
+    document.addEventListener('DOMContentLoaded', init);
   }
 })();
